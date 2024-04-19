@@ -338,7 +338,7 @@ def classify_and_find_distances(array, cutoff_distance=3.0):
 # for idx2, (classification, distance, idx3) in results.items():
 #     print(f"Type 2 atom {idx2} (classified with {classification} type 1 bonds) is paired with Type 3 atom {idx3}, Distance: {distance}")
 
-def classify_and_find_distances_array(array, cutoff_distance=3.0):
+def classify_and_find_distances_array(array, cutoff_distance=3.0, neighbor_cutoff=3.0, min_neighbors=8):
     # Isolate atoms of each type and their indices
     indices_type_1 = np.where(array[:, 3] == 1)[0]
     atoms_type_1 = array[indices_type_1, :3]
@@ -348,21 +348,40 @@ def classify_and_find_distances_array(array, cutoff_distance=3.0):
     atoms_type_3 = array[indices_type_3, :3]
     
     # Calculate distances for bonding classification (type 1 and type 2 atoms)
-    distances_1_2 = cdist(atoms_type_2, atoms_type_1)
-    bonded_counts = np.sum(distances_1_2 < cutoff_distance, axis=1)
+    distances_1_2 = cdist(atoms_type_1, atoms_type_2)
+    bonded_1_2 = distances_1_2 < cutoff_distance
+    bonded_counts = np.sum(bonded_1_2, axis=0)
     
+    # Determine the neighbor count for each type 1 atom
+    distances_1_1 = cdist(atoms_type_1, atoms_type_1)
+    neighbor_counts = np.sum(distances_1_1 < neighbor_cutoff, axis=1) - 1  # exclude self-counting
+
+    # Classify type 2 atoms based on bonding rules
+    classifications = np.full(len(atoms_type_2), 'MC', dtype=object)
+    for i in range(len(atoms_type_2)):
+        bonded_type_1_indices = np.where(bonded_1_2[:, i])[0]
+        if bonded_counts[i] == 1:
+            primary_neighbor_index = bonded_type_1_indices[0]
+            primary_neighbor_count = neighbor_counts[primary_neighbor_index]
+            if primary_neighbor_count >= min_neighbors:
+                classifications[i] = 'WC'
+            else:
+                classifications[i] = 'UC'
+        elif bonded_counts[i] < 1:
+            classifications[i] = 'NC'  # No connection
+
     # Calculate distances for pairing (type 2 and type 3 atoms)
     distances_2_3 = cdist(atoms_type_2, atoms_type_3)
     row_ind, col_ind = linear_sum_assignment(distances_2_3)
     paired_distances = distances_2_3[row_ind, col_ind]
-    
+
     # Compile results into an array
-    results_array = np.zeros((len(row_ind), 4))
+    results_array = np.zeros((len(row_ind), 5), dtype=object)
     for i, idx2 in enumerate(indices_type_2[row_ind]):
-        classification = bonded_counts[i]
+        classification = classifications[row_ind[i]]
         distance = paired_distances[i]
         idx3 = indices_type_3[col_ind[i]]
-        results_array[i] = [idx2, classification, distance, idx3]
+        results_array[i] = [idx2, classification, distance, idx3, bonded_counts[row_ind[i]]]
     
     return results_array
 
