@@ -2,6 +2,8 @@ import ovito
 from ovito.io import import_file
 from ovito.modifiers import *
 from ovito.data import *
+from ovito.modifiers import AffineTransformationModifier
+from ovito.modifiers import WrapPeriodicImagesModifier
 import glob as glob
 import numpy as np
 import matplotlib.pyplot as plt
@@ -389,3 +391,82 @@ def classify_and_find_distances_array(array, cutoff_distance=2.1, neighbor_cutof
 # array = np.array([...])  # Your Nx4 array
 # results_array = classify_and_find_distances_array(array)
 # print(results_array)
+
+# function for doing classifying and such
+def bond_lengths_WCUCMC(dic):
+
+    data = dic["data"]
+
+    n_frames = len(data)
+
+    new_array_WC = []
+    new_array_UC = []
+    new_array_multi = []
+
+    for frame_data in data:
+        # cutoff_distance is the Pt-C cutoff, and neighbor is the Pt-Pt cutoff, min_neighboors is the min number of neighbors for WC classification
+        results = classify_and_find_distances_array(frame_data, cutoff_distance=2.1, neighbor_cutoff=3.5)
+        wc_co = results[np.where(results[:, 1] == "WC")[0]]
+        uc_co = results[np.where(results[:, 1] == "UC")[0]]
+        multi_co = results[np.where(results[:, 1] == "MC")[0]]
+
+
+        if len(wc_co)>0:
+            n_WC = wc_co.shape[0]
+            mean_WC = np.mean(wc_co[:,2])
+            std_WC = np.std(wc_co[:,2])
+            new_array_WC.append([n_WC, mean_WC, std_WC])
+        else:
+            new_array_WC.append([0, 0, 0])
+        
+
+
+        if len(uc_co)>0:
+            n_UC = uc_co.shape[0]
+            mean_UC = np.mean(uc_co[:,2])
+            std_UC = np.std(uc_co[:,2])
+
+            new_array_UC.append([n_UC, mean_UC, std_UC])
+        else:
+            new_array_UC.append([0, 0, 0])
+
+        if len(multi_co)>0:
+            n_multi = len(multi_co)
+            mean_multi = np.mean(multi_co[:,2])
+            std_multi = np.std(multi_co[:,2])
+
+            new_array_multi.append([n_multi, mean_multi, std_multi])
+        else:
+            new_array_multi.append([0, 0, 0])
+
+    new_array_WC = np.array(new_array_WC)
+    new_array_UC = np.array(new_array_UC)
+    new_array_multi = np.array(new_array_multi)
+
+    n_WC = np.mean(new_array_WC[:,0])
+    n_UC = np.mean(new_array_UC[:,0])
+    n_multi = np.mean(new_array_multi[:,0])
+
+    r_WC = np.mean(new_array_WC[:,1][new_array_WC[:,1]>1])
+    r_UC = np.mean(new_array_UC[:,1][new_array_UC[:,1]>1])
+    r_multi = np.mean(new_array_multi[:,1][new_array_multi[:,1]>1])
+
+    
+
+    return n_WC, n_UC, n_multi, r_WC, r_UC, r_multi
+
+
+def read_xyz(filename):
+    # Mapping from atom symbols to numbers
+    symbol_to_number = {"Pt": 1, "C": 2, "O": 3}
+    
+    with open(filename, 'r') as file:
+        lines = file.readlines()
+    
+    atom_count = int(lines[0].strip())
+    atoms = []
+    for line in lines[2:2 + atom_count]:
+        parts = line.strip().split()
+        atom_type = symbol_to_number[parts[0]]  # Convert symbol to number
+        atoms.append([float(parts[1]), float(parts[2]), float(parts[3]),atom_type ])
+    return np.array(atoms)
