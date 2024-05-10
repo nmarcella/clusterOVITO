@@ -23,6 +23,10 @@ from clusterOVITO.basic.xyz_to_FEFF import *
 from scipy.spatial.distance import cdist
 from scipy.optimize import linear_sum_assignment
 
+
+import py3Dmol
+from scipy.spatial import ConvexHull
+
 def make_rdf_feff(distances, rmeshPrime):
     # Use np.histogram to directly compute the count within each bin
     counts, _ = np.histogram(distances, bins=np.append(rmeshPrime, rmeshPrime[-1]+(rmeshPrime[1]-rmeshPrime[0])))
@@ -470,3 +474,73 @@ def read_xyz(filename):
         atom_type = symbol_to_number[parts[0]]  # Convert symbol to number
         atoms.append([float(parts[1]), float(parts[2]), float(parts[3]),atom_type ])
     return np.array(atoms)
+
+
+
+
+def filter_pt_atoms(dic):
+    return dic[:,0:3][np.where(dic[:,3]==1)]
+
+def calculate_sphericity(points):
+    # Calculate the convex hull
+    hull = ConvexHull(points)
+
+    # Volume (V) and surface area (A) of the convex hull
+    V = hull.volume
+    A = hull.area
+
+    # Calculate the sphericity
+    sphericity = (np.pi ** (1/3)) * ((6 * V) ** (2/3)) / A
+    return sphericity
+
+def plot_convex_hull(points):
+    view = py3Dmol.view(width=800, height=400)
+
+    # Add points to the viewer
+    for point in points:
+        view.addSphere({'center': {'x': point[0], 'y': point[1], 'z': point[2]}, 
+                        'radius': 0.5, 'color': 'red'})
+
+    # Calculate the convex hull
+    hull = ConvexHull(points)
+
+    # Add edges of the convex hull
+    for simplex in hull.simplices:
+        for i in range(len(simplex)):
+            start = simplex[i]
+            end = simplex[(i + 1) % len(simplex)]  # Wrap around with modulo
+            start_point = points[start]
+            end_point = points[end]
+            view.addCylinder({'start': {'x': start_point[0], 'y': start_point[1], 'z': start_point[2]},
+                              'end': {'x': end_point[0], 'y': end_point[1], 'z': end_point[2]},
+                              'radius': 0.1, 'color': 'blue', 'fromCap': 0, 'toCap': 0})
+
+    view.zoomTo()
+    return view
+
+
+
+def count_surface_pt_atoms(array, neighbor_cutoff=3.1):
+    # Isolate atoms of each type and their indices
+    indices_pt = np.where(array[:, 3] == 1)[0]  # Pt atoms
+    atoms_pt = array[indices_pt, :3]
+
+    # Calculate neighbor counts for Pt atoms
+    distances_pt_pt = cdist(atoms_pt, atoms_pt)
+    neighbor_counts = np.sum(distances_pt_pt < neighbor_cutoff, axis=1) - 1  # exclude self-counting
+
+    # Count Pt atoms with fewer than 9 neighbors
+    low_neighbor_count = np.sum(neighbor_counts <=9 )
+
+    return low_neighbor_count
+
+def average_surface_pt(dic):
+    data = dic["data"]
+    c_array = []
+    for d in data:
+        c = count_surface_pt_atoms(d)
+        c_array.append(c)
+    c_array = np.array(c_array)
+    c_array = np.mean(c_array)
+
+    return c_array
